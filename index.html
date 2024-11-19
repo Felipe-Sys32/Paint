@@ -1,0 +1,246 @@
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Paint Clone</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.3/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Roboto', sans-serif;
+        }
+        #canvas {
+            border: 1px solid #000;
+        }
+        .color-indicator {
+            position: absolute;
+            pointer-events: none;
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            border: 2px solid #000;
+        }
+    </style>
+</head>
+<body class="bg-gray-100">
+    <header class="bg-white shadow">
+        <div class="container mx-auto px-6 py-3 flex justify-between items-center">
+            <a href="#" class="text-xl font-bold text-gray-800">Paint Clone</a>
+            <nav class="flex space-x-4">
+                <button id="clearCanvas" class="text-gray-800 hover:text-gray-600">Clear</button>
+                <button id="saveCanvas" class="text-gray-800 hover:text-gray-600">Save</button>
+                <button id="undo" class="text-gray-800 hover:text-gray-600">Undo</button>
+                <button id="record" class="text-gray-800 hover:text-gray-600">Record</button>
+            </nav>
+        </div>
+    </header>
+    <main class="container mx-auto px-6 py-8">
+        <div class="flex justify-center items-center">
+            <canvas id="canvas" width="800" height="600" class="bg-white"></canvas>
+        </div>
+        <div class="flex justify-center items-center mt-4">
+            <input type="color" id="colorPicker" class="mr-4">
+            <input type="range" id="brushSize" min="1" max="20" value="5" class="mr-4">
+            <span id="brushSizeValue">5</span>
+        </div>
+        <div class="flex justify-center items-center mt-4 flex-wrap">
+            <button id="freehand" class="bg-gray-800 text-white px-4 py-2 rounded mr-4 mb-2">Freehand</button>
+            <button id="rectangle" class="bg-gray-800 text-white px-4 py-2 rounded mr-4 mb-2">Rectangle</button>
+            <button id="circle" class="bg-gray-800 text-white px-4 py-2 rounded mr-4 mb-2">Circle</button>
+            <button id="line" class="bg-gray-800 text-white px-4 py-2 rounded mb-2">Line</button>
+        </div>
+    </main>
+    <footer class="bg-white shadow mt-12">
+        <div class="container mx-auto px-6 py-4 flex justify-between items-center">
+            <p class="text-gray-600">© 2023 Paint Clone. All rights reserved.</p>
+            <div class="flex space-x-4">
+                <a href="#" class="text-gray-600 hover:text-gray-800"><i class="fab fa-facebook-f"></i></a>
+                <a href="#" class="text-gray-600 hover:text-gray-800"><i class="fab fa-twitter"></i></a>
+                <a href="#" class="text-gray-600 hover:text-gray-800"><i class="fab fa-instagram"></i></a>
+                <a href="#" class="text-gray-600 hover:text-gray-800"><i class="fab fa-linkedin-in"></i></a>
+            </div>
+        </div>
+    </footer>
+    <div id="colorIndicator" class="color-indicator"></div>
+    <script>
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        const colorPicker = document.getElementById('colorPicker');
+        const brushSize = document.getElementById('brushSize');
+        const brushSizeValue = document.getElementById('brushSizeValue');
+        const clearCanvas = document.getElementById('clearCanvas');
+        const saveCanvas = document.getElementById('saveCanvas');
+        const undoButton = document.getElementById('undo');
+        const recordButton = document.getElementById('record');
+        const colorIndicator = document.getElementById('colorIndicator');
+        const freehandButton = document.getElementById('freehand');
+        const rectangleButton = document.getElementById('rectangle');
+        const circleButton = document.getElementById('circle');
+        const lineButton = document.getElementById('line');
+
+        let painting = false;
+        let shape = 'freehand';
+        let startX, startY;
+        let drawingHistory = [];
+        let isRecording = false;
+        let mediaRecorder;
+        let recordedChunks = [];
+
+        function startPosition(e) {
+            painting = true;
+            startX = e.clientX - canvas.offsetLeft || e.touches[0].clientX - canvas.offsetLeft;
+            startY = e.clientY - canvas.offsetTop || e.touches[0].clientY - canvas.offsetTop;
+            if (shape === 'freehand') {
+                draw(e);
+            }
+        }
+
+        function endPosition(e) {
+            if (shape !== 'freehand' && painting) {
+                const endX = e.clientX - canvas.offsetLeft || e.changedTouches[0].clientX - canvas.offsetLeft;
+                const endY = e.clientY - canvas.offsetTop || e.changedTouches[0].clientY - canvas.offsetTop;
+                ctx.beginPath();
+                ctx.strokeStyle = colorPicker.value;
+                ctx.lineWidth = brushSize.value;
+                if (shape === 'rectangle') {
+                    ctx.rect(startX, startY, endX - startX, endY - startY);
+                } else if (shape === 'circle') {
+                    const radius = Math.sqrt(Math.pow(endX - startX, 2) + Math.pow(endY - startY, 2));
+                    ctx.arc(startX, startY, radius, 0, Math.PI * 2);
+                } else if (shape === 'line') {
+                    ctx.moveTo(startX, startY);
+                    ctx.lineTo(endX, endY);
+                }
+                ctx.stroke();
+                ctx.closePath();
+                saveState();
+            }
+            painting = false;
+            ctx.beginPath();
+        }
+
+        function draw(e) {
+            if (!painting || shape !== 'freehand') return;
+            ctx.lineWidth = brushSize.value;
+            ctx.lineCap = 'round';
+            ctx.strokeStyle = colorPicker.value;
+
+            const x = e.clientX - canvas.offsetLeft || e.touches[0].clientX - canvas.offsetLeft;
+            const y = e.clientY - canvas.offsetTop || e.touches[0].clientY - canvas.offsetTop;
+
+            ctx.lineTo(x, y);
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.moveTo(x, y);
+            saveState();
+        }
+
+        function saveState() {
+            if (painting) {
+                drawingHistory.push(ctx.getImageData(0, 0, canvas.width, canvas.height));
+            }
+        }
+
+        function undo() {
+            if (drawingHistory.length > 0) {
+                drawingHistory.pop();
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                if (drawingHistory.length > 0) {
+                    ctx.putImageData(drawingHistory[drawingHistory.length - 1], 0, 0);
+                }
+            }
+        }
+
+        function startRecording() {
+            recordedChunks = [];
+            const stream = canvas.captureStream();
+            mediaRecorder = new MediaRecorder(stream, { mimeType: 'video/webm' });
+
+            mediaRecorder.ondataavailable = function(event) {
+                if (event.data.size > 0) {
+                    recordedChunks.push(event.data);
+                }
+            };
+
+            mediaRecorder.onstop = function() {
+                const blob = new Blob(recordedChunks, { type: 'video/webm' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.style.display = 'none';
+                a.href = url;
+                a.download = 'drawing.webm';
+                document.body.appendChild(a);
+                a.click();
+                window.URL.revokeObjectURL(url);
+            };
+
+            mediaRecorder.start();
+        }
+
+        function stopRecording() {
+            mediaRecorder.stop();
+        }
+
+        canvas.addEventListener('mousedown', startPosition);
+        canvas.addEventListener('mouseup', endPosition);
+        canvas.addEventListener('mousemove', draw);
+        canvas.addEventListener('touchstart', startPosition);
+        canvas.addEventListener('touchend', endPosition);
+        canvas.addEventListener('touchmove', draw);
+
+        brushSize.addEventListener('input', () => {
+            brushSizeValue.textContent = brushSize.value;
+        });
+
+        clearCanvas.addEventListener('click', () => {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            drawingHistory = [];
+        });
+
+        saveCanvas.addEventListener('click', () => {
+            const link = document.createElement('a');
+            link.download = 'painting.png';
+            link.href = canvas.toDataURL();
+            link.click();
+        });
+
+        undoButton.addEventListener('click', undo);
+
+        recordButton.addEventListener('click', () => {
+            if (isRecording) {
+                stopRecording();
+                recordButton.textContent = 'Record';
+            } else {
+                startRecording();
+                recordButton.textContent = 'Stop Recording';
+            }
+            isRecording = !isRecording;
+        });
+
+        document.addEventListener('mousemove', (e) => {
+            colorIndicator.style.backgroundColor = colorPicker.value;
+            colorIndicator.style.width = `${brushSize.value}px`;
+            colorIndicator.style.height = `${brushSize.value}px`;
+            colorIndicator.style.left = `${e.clientX}px`;
+            colorIndicator.style.top = `${e.clientY}px`;
+        });
+
+        freehandButton.addEventListener('click', () => {
+            shape = 'freehand';
+        });
+
+        rectangleButton.addEventListener('click', () => {
+            shape = 'rectangle';
+        });
+
+        circleButton.addEventListener('click', () => {
+            shape = 'circle';
+        });
+
+        lineButton.addEventListener('click', () => {
+            shape = 'line';
+        });
+    </script>
+</body>
+</html>
